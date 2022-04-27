@@ -1,6 +1,10 @@
 import { Sequelize } from "sequelize-typescript"
 import Address from "../../domain/entity/address";
 import Customer from "../../domain/entity/customer";
+import EventDispatcher from "../../domain/event/@shared/event-dispatcher";
+import CustomerCreatedEvent from "../../domain/event/customer/customer-created.event";
+import EnviaConsoleLog1Handler from "../../domain/event/customer/handler/envia-console-log1.handler";
+import EnviaConsoleLog2Handler from "../../domain/event/customer/handler/envia-console-log2.handler";
 import CustomerModel from "../db/sequelize/model/customer.model";
 import CustomerRepository from "./customer.repository";
 
@@ -20,6 +24,53 @@ describe("Customer repository test", () => {
 
   afterEach(async () => {
     await sequelize.close();
+  });
+
+  it("Should run the events when a customer is created", async () => {
+    const customerRepository = new CustomerRepository();
+    const customer = new Customer("123", "Fulando");
+    const address = new Address("Rua tal", 123, "234234", "Raio Q Parta");
+    customer.address = address;
+
+    await customerRepository.create(customer);
+
+    const customerModel = await CustomerModel.findOne({ where: { id: "123" } });
+
+    const eventDispatcher = new EventDispatcher();
+    const eventLogOneHandler = new EnviaConsoleLog1Handler();
+    const eventLogTwoHandler = new EnviaConsoleLog2Handler();
+    const spyEventLogOneHandler = jest.spyOn(eventLogOneHandler, "handle");
+    const spyEventLogTwoHandler = jest.spyOn(eventLogTwoHandler, "handle");
+
+
+
+    eventDispatcher.register("CustomerCreatedEvent", eventLogOneHandler);
+    eventDispatcher.register("CustomerCreatedEvent", eventLogTwoHandler);
+
+    expect(eventDispatcher.getEventHandlers["CustomerCreatedEvent"]).toBeDefined();
+    expect(eventDispatcher.getEventHandlers["CustomerCreatedEvent"].length).toBe(2);
+
+    const customerCreatedEvent = new CustomerCreatedEvent({
+      id: customerModel.id,
+      name: customerModel.name,
+    });
+
+    eventDispatcher.notify(customerCreatedEvent);
+
+    expect(spyEventLogOneHandler).toHaveBeenCalled();
+    expect(spyEventLogTwoHandler).toHaveBeenCalled();
+
+
+    expect(customerModel.toJSON()).toStrictEqual({
+      id: "123",
+      name: customer.name,
+      active: customer.isActive(),
+      rewardPoints: customer.rewardPoints,
+      street: address.street,
+      number: address.number,
+      zip: address.zip,
+      city: address.city,
+    });
   });
 
   it("Should create a new customer", async () => {
